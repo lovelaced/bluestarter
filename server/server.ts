@@ -3,17 +3,19 @@ import { oakCors } from "https://deno.land/x/cors/mod.ts";
 import { WebSocketServer, WebSocketClient } from "https://deno.land/x/websocket/mod.ts";
 import { Subscription } from "@atproto/xrpc-server";
 import pkg from "@atproto/api";
+import * as dotenv from "dotenv";
 import { WriteOpAction, cborToLexRecord, readCarWithRoot } from "@atproto/repo";
+import logger from "./logger.ts";
 const { AtUri } = pkg;
 
 const clients: Set<WebSocketClient> = new Set();
 
 // Fetch data from your service and push to all connected clients
 async function fetchData() {
-  // console.log("fetchData called");
+  logger.debug("fetchData called");
 
   const sub = new Subscription({
-    // service: 'wss://bsky.social',
+  //  service: 'wss://bsky.social',
     service: 'wss://bgs.bsky-sandbox.dev',
     method: "com.atproto.sync.subscribeRepos",
     validate: (body) => body,
@@ -22,8 +24,8 @@ async function fetchData() {
   console.log("Subscription created");
 
   for await (const frameBody of sub) {
-   // console.log("Received frameBody from subscription");
-   // console.log("frameBody", frameBody);
+   logger.debug("Received frameBody from subscription");
+   logger.debug("frameBody", frameBody);
 
     let data = {
       count: 0,
@@ -40,42 +42,42 @@ async function fetchData() {
     };
 
     data.isConnected = true;
-   // console.log("Set isConnected to true");
+   logger.debug("Set isConnected to true");
 
     try {
-     // console.log("Checking if frameBody.blocks is an instance of Uint8Array");
+     logger.debug("Checking if frameBody.blocks is an instance of Uint8Array");
       if (!(frameBody.blocks instanceof Uint8Array)) {
-      //  console.log("frameBody.blocks is not an instance of Uint8Array, returning");
+      logger.debug("frameBody.blocks is not an instance of Uint8Array, returning");
         return;
       }
-     // console.log("Reading car with root");
+     logger.debug("Reading car with root");
       const car = await readCarWithRoot(frameBody.blocks);
-     // console.log("Car read", car);
+     logger.debug("Car read", car);
 
       const ops = [];
-     // console.log("Processing frameBody.ops");
-     // console.log("Framebody repo:", frameBody.repo);
+     logger.debug("Processing frameBody.ops");
+     logger.debug("Framebody repo:", frameBody.repo);
       for (const op of frameBody.ops) {
       //frameBody.ops.forEach((op) => {
-       // console.log("Processing op", op);
+       logger.debug("Processing op", op);
         data.count += 1;
         data.countSinceLast += 1;
 
         const [collection, rkey] = op.path.split("/");
-       // console.log("Split path into collection and rkey", collection, rkey);
+       logger.debug("Split path into collection and rkey", collection, rkey);
         if (
           op.action === WriteOpAction.Create ||
           op.action === WriteOpAction.Update
         ) {
-          // console.log("Action is create or update");
+          logger.debug("Action is create or update");
           const cid = op.cid;
-         // console.log("Got cid", cid);
+         logger.debug("Got cid", cid);
           const record = car.blocks.get(cid);
           const username = await getAlsoKnownAs(frameBody.repo);
           //const postLink = `https://bsky.app/profile/${username}/post/${op.rkey}`;
 	  const postLink = generatePostLink(username, rkey);
 
-       //   console.log("Got record", cborToLexRecord(record));
+       logger.debug("Got record", cborToLexRecord(record));
           ops.push({
             action: op.action,
             cid: op.cid.toString(),
@@ -85,38 +87,38 @@ async function fetchData() {
 	    username: username,
 	    postLink: postLink
 	  });
-          // console.log("Pushed new op to ops");
+          logger.debug("Pushed new op to ops");
         } else if (op.action !== WriteOpAction.Delete) {
-          console.warn(`ERROR: Unknown repo op action: ${op.action}`);
+          logger.warning(`ERROR: Unknown repo op action: ${op.action}`);
           data.error = `Unknown action: ${op.action}`;
         }
         for (const op of ops) {
        // ops.forEach((op) => {
-          //console.log("Processing op", op);
+          logger.debug("Processing op", op);
           data.lastMessage = op;
-          // console.log("Set lastMessage to", op);
+          logger.debug("Set lastMessage to", op);
           if (op.record?.text) {
-          //  console.log("Op record has text", op.record.text);
+          logger.debug("Op record has text", op.record.text);
             data.lastNonEmptyMessage = op.record.text;
-         //   console.log("Set lastNonEmptyMessage to record text");
+         logger.debug("Set lastNonEmptyMessage to record text");
           }
 
-          if (op.record?.$type === "app.bsky.feed.like") {
-          //  console.log("Op record is a like");
+          if (op.record?.$ === "app.bsky.feed.like") {
+          logger.debug("Op record is a like");
             data.likeCount += 1;
-          //  console.log("Incremented likeCount");
+          logger.debug("Incremented likeCount");
           }
 
-          if (op.record?.$type === "app.bsky.feed.post") {
-          //  console.log("Op record is a post");
+          if (op.record?.$ === "app.bsky.feed.post") {
+          logger.debug("Op record is a post");
             data.postCount += 1;
-          //  console.log("Incremented postCount");
+          logger.debug("Incremented postCount");
           }
 
-          if (op.record?.$type === "app.bsky.graph.follow") {
-          //  console.log("Op record is a follow");
+          if (op.record?.$ === "app.bsky.graph.follow") {
+          logger.debug("Op record is a follow");
             data.followCount += 1;
-          //  console.log("Incremented followCount");
+          logger.debug("Incremented followCount");
           }
         }
       }
@@ -124,21 +126,22 @@ async function fetchData() {
       console.error("Unable to process frameBody", frameBody, err);
       data.error = err;
     }
-    //console.log("Processed data:", data)
+    logger.debug("Processed data:", data)
 
-    //console.log("Data processed successfully, sending data to clients");
+    logger.debug("Data processed successfully, sending data to clients");
     for (const client of clients) {
-    //  console.log("Sending data to client", client);
+    logger.debug("Sending data to client", client);
       client.send(JSON.stringify(data));
-    //  console.log("Data sent to client:", data);
+    logger.debug("Data sent to client:", data);
     }
   }
 }
 
 async function getAlsoKnownAs(did: string): Promise<string> {
   const response = await fetch(`https://plc.bsky-sandbox.dev/${did}/data`);
+ // const response = await fetch(`https://plc.directory/${did}/data`);
   const data = await response.json();
-  //console.log("response data from plc:", data);
+  logger.debug("response data from plc:", data);
   return data.alsoKnownAs[0].split('://')[1];
 }
 
@@ -158,7 +161,7 @@ wss.on("connection", (ws: WebSocketClient) => {
   });
 
   ws.on("close", () => {
-    console.log("Client connection closed", ws);
+    console.log("Client connection closed");
     clients.delete(ws);
     console.log("Deleted client from clients set");
   });

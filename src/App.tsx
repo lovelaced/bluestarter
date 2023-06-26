@@ -1,72 +1,50 @@
-import React, { useEffect, useRef, useState } from 'react';
-import './App.css';  // Import your CSS
+import { useEffect, useRef } from 'react';
+import { createStitches } from '@stitches/react';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
+import { Post } from './types';
+import { css, ScrollRoot, ScrollViewport, Scrollbar, ScrollbarThumb } from './theme';
+import useWebSocket from './useWebSocket';
+import Feed from './components/Feed'; // import the Feed component
 
-// Define the type of the post
-interface Post {
-  text: string;
-  $type: string;
-  reply: object;
-  createdAt: string;
-  username: string;
-  postLink: string;
-}
-
-const App: React.FC = () => {
-  const [posts, setPosts] = useState<Post[]>([]);
+const App = () => {
+  const posts = useWebSocket('ws://localhost:5000');
   const postsEndRef = useRef<null | HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    postsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }
-
-  useEffect(() => {
-    const socket = new WebSocket('ws://localhost:5000');
-
-    socket.onopen = () => {
-      console.log('Connected');
-    };
-
-socket.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.lastMessage && data.lastMessage.record) {  // Add this check
-    const post: Post = data.lastMessage.record;
-    post.username = data.lastMessage.username;  // Add the username
-    post.postLink = data.lastMessage.postLink;  // Add the post link
-    setPosts((posts) => [...posts, post]);
-  }
-};
-
-    socket.onerror = (error) => {
-      console.log('WebSocket error: ', error);
-    };
-
-    socket.onclose = () => {
-      console.log('Disconnected');
-    };
-
-    return () => {
-      socket.close();
-    };
-  }, []);
+    postsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(scrollToBottom, [posts]);
 
+  const appClass = css({
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100vh',
+    backgroundColor: '$gray100',
+    fontFamily: '$body',
+    color: '$gray900',
+  })();
+
+  const headerClass = css({
+    fontSize: '$heading',
+    lineHeight: '$heading',
+    marginBottom: '$4',
+  })();
+
   return (
-    <div className="app">
-      <h1>Live Posts</h1>
-      <div className="posts">
-        {posts.map((post, index) => (
-          <div key={index} className="post">
-            <p className="username">{post.username}</p>
-            <p className="timestamp">
-              {new Date(post.createdAt).toLocaleString()}
-            </p>
-            <p className="text">{post.text}</p>
-            <a href={post.postLink} target="_blank" rel="noopener noreferrer" className="post-link">View post</a>
-          </div>
-        ))}
-        <div ref={postsEndRef} />
-      </div>
+    <div className={appClass}>
+      <h1 className={headerClass}>Live Posts</h1>
+      <ScrollRoot>
+        <ScrollViewport>
+          <Feed posts={posts} /> {/* Use the Feed component here */}
+          <div ref={postsEndRef} />
+        </ScrollViewport>
+        <Scrollbar orientation="vertical">
+          <ScrollbarThumb />
+        </Scrollbar>
+      </ScrollRoot>
     </div>
   );
 };
