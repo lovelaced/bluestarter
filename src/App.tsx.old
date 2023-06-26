@@ -1,0 +1,81 @@
+import React, { useEffect, useState } from 'react';
+import { Subscription } from "@atproto/xrpc-server";
+import pkg from "@atproto/api";
+import { WriteOpAction, cborToLexRecord, readCarWithRoot } from "@atproto/repo";
+import { Commit } from "@atproto/api/dist/client/types/com/atproto/sync/subscribeRepos.js";
+import { is } from "@atproto/common-web/dist/check.js";
+const { AtUri } = pkg;
+
+function App() {	
+        const [count, setCount] = useState(0);
+	const [countSinceLast, setCountSinceLast] = useState(0);
+	const [postCount, setPostCount] = useState(0);
+	const [likeCount, setLikeCount] = useState(0);
+	const [followCount, setFollowCount] = useState(0);
+	const [repo, setRepo] = useState("bsky.social");
+	const [isConnected, setIsConnected] = useState(false);
+	const [error, setError] = useState(null);
+	const [messages, setMessages] = useState([]);
+	const [lastHandle, setLastHandle] = useState(null);
+	const [lastMessage, setLastMessage] = useState(null);
+	const [lastNonEmptyMessage, setLastNonEmptyMessage] = useState(null);
+	const [startTime, setStartTime] = useState(null);
+
+useEffect(() => {
+  fetch('http://localhost:5000/firehose')
+    .then(response => response.json())
+    .then(data => {
+      setCount(data.count);
+      setCountSinceLast(data.countSinceLast);
+      setPostCount(data.postCount);
+      setLikeCount(data.likeCount);
+      setFollowCount(data.followCount);
+      setRepo(data.repo);
+      setIsConnected(data.isConnected);
+      setError(data.error);
+      setLastMessage(data.lastMessage);
+      setLastNonEmptyMessage(data.lastNonEmptyMessage);
+      setStartTime(data.startTime);
+    })
+    .catch(error => console.error('Error:', error));
+}, []);
+
+    return (
+        <div className="app">
+            <div className="firehose">
+                <h1 style={{color: 'blue'}}>BlueSky Firehose</h1>
+                <div className="connection-info">
+                    <div className={`connection-status ${isConnected ? 'connected' : 'not-connected'}`}>
+                        {isConnected ? 'Connected!' : 'Not Connected'}
+                    </div>
+                    <div className="count-info">
+                        <p>Total Count: {count}</p>
+                        <p>Posts: {postCount}</p>
+                        <p>Likes: {likeCount}</p>
+                        <p>Follows: {followCount}</p>
+                    </div>
+                    {error && <div className="error-message">Error: {error}</div>}
+                </div>
+                <div className="action-info">
+                    <p>Last action: {lastMessage && lastMessage.action}</p>
+                </div>
+                <div className="latest-post">
+                    <p>Latest post:</p>
+                    <div className="post-content">
+                        {lastNonEmptyMessage && lastNonEmptyMessage.trim().length > 0 ? lastNonEmptyMessage : null}
+                    </div>
+                </div>
+                <div className="additional-info">
+                    <div className="rate-info">
+                        <p>Rate: {countSinceLast.toFixed(2)} ops/sec</p>
+                    </div>
+                    <div className="repo-info">
+                        <p style={{color: 'blue'}}>Repo: {repo}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+export default App;

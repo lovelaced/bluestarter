@@ -1,0 +1,120 @@
+import { Application } from "https://deno.land/x/oak/mod.ts";
+import { oakCors } from "https://deno.land/x/cors/mod.ts";
+import { WebSocketServer, WebSocketClient } from "https://deno.land/x/websocket/mod.ts";
+import { Subscription } from "@atproto/xrpc-server";
+import pkg from "@atproto/api";
+import { WriteOpAction, cborToLexRecord, readCarWithRoot } from "@atproto/repo";
+const { AtUri } = pkg;
+
+const clients: Set<WebSocketClient> = new Set();
+
+// Fetch data from your service and push to all connected clients
+async function fetchData() {
+  const sub = new Subscription({
+    service: 'wss://bsky.social',
+    method: "com.atproto.sync.subscribeRepos",
+    validate: (body) => body,
+  });
+
+  for await (const frameBody of sub) {
+    let data = {
+      count: 0,
+      countSinceLast: 0,
+      postCount: 0,
+      likeCount: 0,
+      followCount: 0,
+      repo: "bsky.social",
+      isConnected: false,
+      error: null,
+      lastMessage: null,
+      lastNonEmptyMessage: null,
+      startTime: Date.now(),
+    };
+    
+    data.isConnected = true;
+
+    try {
+      if (!(frameBody.blocks instanceof Uint8Array)) {
+        return;
+      }
+      const car = await readCarWithRoot(frameBody.blocks);
+      const ops = [];
+      frameBody.ops.forEach((op) => {
+        data.count += 1;
+        data.countSinceLast += 1;
+
+        const [collection, rkey] = op.path.split("/");
+        if (
+          op.action === WriteOpAction.Create ||
+          op.action === WriteOpAction.Update
+        ) {
+          const cid = op.cid;
+          const record = car.blocks.get(cid);
+          ops.push({
+            action: op.action,
+            cid: op.cid.toString(),
+            record: cborToLexRecord(record),
+            blobs: [], // @TODO need to determine how the app-view provides URLs for processed blobs
+            uri: AtUri.make(frameBody.repo, collection, rkey).toString(),
+          });
+        } else if (op.action !== WriteOpAction.Delete) {
+          console.warn(`ERROR: Unknown repo op action: ${op.action}`);
+          data.error = `Unknown action: ${op.action}`;
+        }
+
+        ops.forEach((op) => {
+          data.lastMessage = op;
+          if (op.record?.text) {
+            data.lastNonEmptyMessage = op.record.text;
+          }
+
+          if (op.record?.$type === "app.bsky.feed.like") {
+            data.likeCount += 1;
+          }
+
+          if (op.record?.$type === "app.bsky.feed.post") {
+            data.postCount += 1;
+          }
+
+          if (op.record?.$type === "app.bsky.graph.follow") {
+            data.followCount += 1;
+          }
+        });
+      });
+    } catch (err) {
+      console.error("Unable to process frameBody", frameBody, err);
+      data.error = err;
+    }
+  }
+
+      for (const client of clients) {
+      client.send(JSON.stringify(data));
+    }
+  }
+
+// Setup WebSocket handling
+const wss = new WebSocketServer(8080);
+wss.on("connection", (ws: WebSocketClient) => {
+  clients.add(ws);
+  ws.on("message", (message: string) => {
+    console.log(message);
+  });
+  ws.on("close", () => {
+    clients.delete(ws);
+  });
+});
+
+// Fetch data periodically (e.g., every second)
+setInterval(fetchData, 1000);
+
+// Setup HTTP server
+const app = new Application();
+
+app.use(oakCors());  // Enable CORS for All Routes
+
+app.use((ctx) => {
+  ctx.response.body = "Hello, World!";
+});
+
+// Start server
+app.listen({ port: 8000 });
