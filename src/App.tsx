@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import './App.css';  // Import your CSS
 
 // Define the type of the post
 interface Post {
@@ -6,10 +7,17 @@ interface Post {
   $type: string;
   reply: object;
   createdAt: string;
+  username: string;
+  postLink: string;
 }
 
 const App: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
+  const postsEndRef = useRef<null | HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    postsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
 
   useEffect(() => {
     const socket = new WebSocket('ws://localhost:5000');
@@ -18,11 +26,15 @@ const App: React.FC = () => {
       console.log('Connected');
     };
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      const post: Post = data.lastMessage.record;
-      setPosts((posts) => [...posts, post]);
-    };
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.lastMessage && data.lastMessage.record) {  // Add this check
+    const post: Post = data.lastMessage.record;
+    post.username = data.lastMessage.username;  // Add the username
+    post.postLink = data.lastMessage.postLink;  // Add the post link
+    setPosts((posts) => [...posts, post]);
+  }
+};
 
     socket.onerror = (error) => {
       console.log('WebSocket error: ', error);
@@ -37,23 +49,24 @@ const App: React.FC = () => {
     };
   }, []);
 
+  useEffect(scrollToBottom, [posts]);
+
   return (
-    <div style={{ padding: "10px", fontFamily: "Arial, sans-serif" }}>
-      <h1 style={{ textAlign: "center" }}>Live Posts</h1>
-      {posts.map((post, index) => (
-        <div key={index} style={{
-            border: "1px solid #ccc",
-            borderRadius: "10px",
-            padding: "10px",
-            marginBottom: "10px",
-            boxShadow: "2px 2px 5px rgba(0,0,0,0.1)"
-        }}>
-          <p style={{ color: "#888", marginBottom: "10px" }}>
-            {new Date(post.createdAt).toLocaleString()}
-          </p>
-          <p>{post.text}</p>
-        </div>
-      ))}
+    <div className="app">
+      <h1>Live Posts</h1>
+      <div className="posts">
+        {posts.map((post, index) => (
+          <div key={index} className="post">
+            <p className="username">{post.username}</p>
+            <p className="timestamp">
+              {new Date(post.createdAt).toLocaleString()}
+            </p>
+            <p className="text">{post.text}</p>
+            <a href={post.postLink} target="_blank" rel="noopener noreferrer" className="post-link">View post</a>
+          </div>
+        ))}
+        <div ref={postsEndRef} />
+      </div>
     </div>
   );
 };

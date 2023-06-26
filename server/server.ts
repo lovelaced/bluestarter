@@ -54,8 +54,10 @@ async function fetchData() {
 
       const ops = [];
      // console.log("Processing frameBody.ops");
-      frameBody.ops.forEach((op) => {
-        console.log("Processing op", op);
+     // console.log("Framebody repo:", frameBody.repo);
+      for (const op of frameBody.ops) {
+      //frameBody.ops.forEach((op) => {
+       // console.log("Processing op", op);
         data.count += 1;
         data.countSinceLast += 1;
 
@@ -69,28 +71,34 @@ async function fetchData() {
           const cid = op.cid;
          // console.log("Got cid", cid);
           const record = car.blocks.get(cid);
-         // console.log("Got record", record);
+          const username = await getAlsoKnownAs(frameBody.repo);
+          //const postLink = `https://bsky.app/profile/${username}/post/${op.rkey}`;
+	  const postLink = generatePostLink(username, rkey);
+
+       //   console.log("Got record", cborToLexRecord(record));
           ops.push({
             action: op.action,
             cid: op.cid.toString(),
             record: cborToLexRecord(record),
             blobs: [], // @TODO need to determine how the app-view provides URLs for processed blobs
             uri: AtUri.make(frameBody.repo, collection, rkey).toString(),
-          });
+	    username: username,
+	    postLink: postLink
+	  });
           // console.log("Pushed new op to ops");
         } else if (op.action !== WriteOpAction.Delete) {
           console.warn(`ERROR: Unknown repo op action: ${op.action}`);
           data.error = `Unknown action: ${op.action}`;
         }
-
-        ops.forEach((op) => {
-       //   console.log("Processing op", op);
+        for (const op of ops) {
+       // ops.forEach((op) => {
+          //console.log("Processing op", op);
           data.lastMessage = op;
-         // console.log("Set lastMessage to op");
+          // console.log("Set lastMessage to", op);
           if (op.record?.text) {
           //  console.log("Op record has text", op.record.text);
             data.lastNonEmptyMessage = op.record.text;
-          //  console.log("Set lastNonEmptyMessage to record text");
+         //   console.log("Set lastNonEmptyMessage to record text");
           }
 
           if (op.record?.$type === "app.bsky.feed.like") {
@@ -110,26 +118,38 @@ async function fetchData() {
             data.followCount += 1;
           //  console.log("Incremented followCount");
           }
-        });
-      });
+        }
+      }
     } catch (err) {
       console.error("Unable to process frameBody", frameBody, err);
       data.error = err;
     }
+    //console.log("Processed data:", data)
 
-    console.log("Data processed successfully, sending data to clients");
+    //console.log("Data processed successfully, sending data to clients");
     for (const client of clients) {
-  //    console.log("Sending data to client", client);
+    //  console.log("Sending data to client", client);
       client.send(JSON.stringify(data));
-  //    console.log("Data sent to client");
+    //  console.log("Data sent to client:", data);
     }
   }
+}
+
+async function getAlsoKnownAs(did: string): Promise<string> {
+  const response = await fetch(`https://plc.bsky-sandbox.dev/${did}/data`);
+  const data = await response.json();
+  //console.log("response data from plc:", data);
+  return data.alsoKnownAs[0].split('://')[1];
+}
+
+function generatePostLink(alsoKnownAs: string, rkey: string): string {
+  return `https://bsky.app/profile/${alsoKnownAs}/post/${rkey}`;
 }
 
 // Setup WebSocket handling
 const wss = new WebSocketServer(5000);
 wss.on("connection", (ws: WebSocketClient) => {
-  console.log("New client connection", ws);
+  console.log("New client connection");
   clients.add(ws);
   console.log("Added new client to clients set");
 
@@ -145,8 +165,8 @@ wss.on("connection", (ws: WebSocketClient) => {
 });
 
 // Fetch data periodically (e.g., every second)
-console.log("Setting up fetchData interval");
-setInterval(fetchData, 1000);
+console.log("Starting data fetch");
+fetchData();
 
 // Setup HTTP server
 console.log("Setting up HTTP server");
