@@ -15,8 +15,8 @@ async function fetchData() {
   logger.debug("fetchData called");
 
   const sub = new Subscription({
-  //  service: 'wss://bsky.social',
-    service: 'wss://bgs.bsky-sandbox.dev',
+    service: 'wss://bsky.social',
+  //  service: 'wss://bgs.bsky-sandbox.dev',
     method: "com.atproto.sync.subscribeRepos",
     validate: (body) => body,
   });
@@ -138,8 +138,8 @@ async function fetchData() {
 }
 
 async function getAlsoKnownAs(did: string): Promise<string> {
-  const response = await fetch(`https://plc.bsky-sandbox.dev/${did}/data`);
- // const response = await fetch(`https://plc.directory/${did}/data`);
+ // const response = await fetch(`https://plc.bsky-sandbox.dev/${did}/data`);
+  const response = await fetch(`https://plc.directory/${did}/data`);
   const data = await response.json();
   logger.debug("response data from plc:", data);
   return data.alsoKnownAs[0].split('://')[1];
